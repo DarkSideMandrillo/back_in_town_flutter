@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:http/http.dart' as http;
@@ -18,19 +19,22 @@ class RadioMetadata {
   });
 }
 
-class RadioService {
+class RadioService with WidgetsBindingObserver {
   static final RadioService _instance = RadioService._internal();
   factory RadioService() => _instance;
+
   RadioService._internal() {
+    WidgetsBinding.instance.addObserver(this);
     _init();
   }
 
   final AudioPlayer _player = AudioPlayer();
-  http.Client? _client;
+  Timer? _pollingTimer;
 
   // --- CONFIGURAZIONE ---
   final String _shortcode = "radio_fossano_back_in_town";
   final String _baseUrl = "https://azuracast.backintown.it";
+
   String get _streamUrl => "$_baseUrl/listen/$_shortcode/radio.mp3";
   String get _apiUrl => "$_baseUrl/api/nowplaying/$_shortcode";
 
@@ -40,6 +44,23 @@ class RadioService {
   );
   final ValueNotifier<bool> isPlayingNotifier = ValueNotifier(false);
   final ValueNotifier<bool> isLoadingNotifier = ValueNotifier(false);
+
+  // --- GESTIONE RISVEGLIO ---
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Appena apri l'app: aggiorna titolo e riparti col controllo
+      print("💡 App risvegliata: Aggiorno dati.");
+      _fetchMetadata();
+      _startPolling();
+    } else if (state == AppLifecycleState.paused) {
+      // Schermo spento: stop controlli (risparmio batteria)
+      // Nota: La musica continua, e il titolo sulla lockscreen
+      // resterà quello dell'ultimo aggiornamento (comportamento standard Android per le web radio)
+      print("💤 App in background: Pausa aggiornamento titoli.");
+      _stopPolling();
+    }
+  }
 
   Future<void> _init() async {
     final session = await AudioSession.instance;
@@ -52,129 +73,42 @@ class RadioService {
           state.processingState == ProcessingState.buffering;
     });
 
-    _player.playbackEventStream.listen(
-      (event) {},
-      onError: (Object e, StackTrace st) {
-        print('Errore Stream Audio: $e');
-      },
-    );
-
-    // 1. Carica SUBITO i dati (per non vedere "In attesa")
-    _fetchInitialMetadata();
-
-    // 2. Poi attiva il canale REAL TIME per gli aggiornamenti futuri
-    _connectSSE();
+    // Avvio
+    _fetchMetadata();
+    _startPolling();
   }
 
-  Future<void> play() async {
-    if (_player.playing) return;
-    try {
-      await _player.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(_streamUrl),
-          tag: MediaItem(
-            id: '1',
-            album: "Radio Fossano",
-            title: metadataNotifier.value.title,
-            artist: metadataNotifier.value.artist,
-            artUri: metadataNotifier.value.artUrl.isNotEmpty
-                ? Uri.parse(metadataNotifier.value.artUrl)
-                : null,
-          ),
-          headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},
-        ),
-      );
-      _player.play();
-    } catch (e) {
-      print("Errore Play: $e");
-    }
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    // Controllo ogni 15 secondi quando l'app è aperta
+    _pollingTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      _fetchMetadata();
+    });
   }
 
-  Future<void> pause() async {
-    await _player.stop();
+  void _stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
   }
 
-  // --- 1. CHIAMATA SINGOLA INIZIALE (Per sbloccare "In attesa") ---
-  Future<void> _fetchInitialMetadata() async {
+  Future<void> _fetchMetadata() async {
     try {
       final response = await http.get(Uri.parse(_apiUrl));
       if (response.statusCode == 200) {
         final data = json.decode(utf8.decode(response.bodyBytes));
+
+        dynamic songData;
         if (data['now_playing'] != null &&
             data['now_playing']['song'] != null) {
-          _updateMetadata(data['now_playing']['song']);
+          songData = data['now_playing']['song'];
+        }
+
+        if (songData != null) {
+          _updateMetadata(songData);
         }
       }
     } catch (e) {
-      print("Errore fetch iniziale: $e");
-    }
-  }
-
-  // --- 2. CANALE REAL TIME (SSE) ---
-  void _connectSSE() async {
-    try {
-      final request = http.Request('GET', Uri.parse("$_apiUrl/sse"));
-      request.headers['User-Agent'] =
-          'Mozilla/5.0'; // Importante per non farsi bloccare
-
-      _client = http.Client();
-      final response = await _client!.send(request);
-
-      response.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .listen(
-            (line) {
-              if (line.startsWith('data:')) {
-                final jsonString = line.substring(5).trim();
-                if (jsonString.isNotEmpty) {
-                  _parseSSEMessage(jsonString);
-                }
-              }
-            },
-            onError: (e) {
-              print('SSE Disconnesso, riprovo tra 5s...');
-              Future.delayed(const Duration(seconds: 5), _connectSSE);
-            },
-            onDone: () {
-              Future.delayed(const Duration(seconds: 5), _connectSSE);
-            },
-          );
-    } catch (e) {
-      print('Errore connessione SSE: $e');
-      Future.delayed(const Duration(seconds: 5), _connectSSE);
-    }
-  }
-
-  void _parseSSEMessage(String jsonString) {
-    try {
-      final data = json.decode(jsonString);
-      dynamic songData;
-
-      // Logica per trovare i dati della canzone dentro la struttura SSE di AzuraCast
-      if (data['now_playing'] != null) {
-        songData = data['now_playing']['song'];
-      } else if (data['pub'] != null && data['pub']['data'] != null) {
-        // A volte arrivano dentro 'pub' -> 'data'
-        final innerData = data['pub']['data'];
-        if (innerData['now_playing'] != null) {
-          songData = innerData['now_playing']['song'];
-        } else if (innerData['np'] != null) {
-          songData = innerData['np']['now_playing']['song'];
-        }
-      } else if (data['connect'] != null && data['connect']['data'] != null) {
-        // Messaggio di prima connessione
-        final innerData = data['connect']['data'];
-        if (innerData.isNotEmpty && innerData[0]['now_playing'] != null) {
-          songData = innerData[0]['now_playing']['song'];
-        }
-      }
-
-      if (songData != null) {
-        _updateMetadata(songData);
-      }
-    } catch (e) {
-      // Ignora errori di parsing su messaggi keep-alive
+      print("Errore fetch: $e");
     }
   }
 
@@ -187,11 +121,41 @@ class RadioService {
 
     if (metadataNotifier.value.title != newMeta.title) {
       metadataNotifier.value = newMeta;
-      // Aggiorna notifica se in play
-      if (_player.playing && _player.audioSource != null) {
-        // Non forziamo il reload per evitare glitch audio,
-        // al prossimo play si aggiornerà anche la notifica Android
-      }
+      // Abbiamo aggiornato i dati interni.
+      // Al prossimo Play/Pausa o Riconnessione, la notifica prenderà questi dati.
     }
+  }
+
+  Future<void> play() async {
+    if (_player.playing) return;
+    try {
+      // ECCO LA MODIFICA: Ora usiamo i dati VERI nei metadati audio
+      await _player.setAudioSource(
+        AudioSource.uri(
+          Uri.parse(_streamUrl),
+          tag: MediaItem(
+            id: '1',
+            album: "Radio Fossano",
+            // Qui prendiamo il titolo e l'artista attuali
+            title: metadataNotifier.value.title.isNotEmpty
+                ? metadataNotifier.value.title
+                : "Back In Town",
+            artist: metadataNotifier.value.artist.isNotEmpty
+                ? metadataNotifier.value.artist
+                : "Diretta Radio",
+            artUri: metadataNotifier.value.artUrl.isNotEmpty
+                ? Uri.parse(metadataNotifier.value.artUrl)
+                : null,
+          ),
+        ),
+      );
+      _player.play();
+    } catch (e) {
+      print("Errore Play: $e");
+    }
+  }
+
+  Future<void> pause() async {
+    await _player.stop();
   }
 }
