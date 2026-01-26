@@ -1,30 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:just_audio_background/just_audio_background.dart'; // <--- IMPORTANTE
 import 'home_screen.dart';
-import 'radio_service.dart'; // Importa il servizio
 
-void main() {
-  // 1. Assicuriamo che il motore di Flutter sia pronto
+// Future<void> main() async {
+//   // Assicura che i collegamenti nativi siano pronti
+//   WidgetsFlutterBinding.ensureInitialized();
+
+//   // --- INIZIALIZZA IL SERVIZIO DI BACKGROUND ---
+//   await JustAudioBackground.init(
+//     androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
+//     androidNotificationChannelName: 'Audio playback',
+//     androidNotificationOngoing: true,
+//   );
+// --------------------------------------------
+
+//   runApp(const MyApp());
+// }
+
+// ---------------------- FIX
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 2. Avviamo la connessione SSE e Audio in BACKGROUND.
-  // Ho tolto 'await': così l'app si apre ISTANTANEAMENTE senza aspettare la rete.
-  RadioService().init();
+  try {
+    // Proviamo a inizializzare l'audio
+    await JustAudioBackground.init(
+      androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
+      androidNotificationChannelName: 'Audio playback',
+      androidNotificationOngoing: true,
+    );
+  } catch (e) {
+    // Se fallisce, stampiamo l'errore ma NON blocchiamo l'app
+    print("⚠️ ERRORE CRITICO AUDIO: $e");
+  }
 
-  runApp(const RadioApp());
+  runApp(const MyApp());
 }
+// ---------------------- FINE FIX
 
-class RadioApp extends StatelessWidget {
-  const RadioApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BackInTown Radio',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: Colors.black,
-        primaryColor: Colors.amber, // Colore giallo del tuo logo
-        // Aggiungi questo per supportare il Material 3 moderno se vuoi
+      title: 'Back In Town',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.amber),
         useMaterial3: true,
       ),
       home: const HomeScreen(),

@@ -1,5 +1,8 @@
 package com.example.back_in_town_flutter
 
-import io.flutter.embedding.android.FlutterActivity
+// IMPORTANTE: Cambia l'import da FlutterFragmentActivity a AudioServiceFragmentActivity
+import com.ryanheise.audioservice.AudioServiceFragmentActivity
 
-class MainActivity : FlutterActivity()
+// Estendi AudioServiceFragmentActivity invece di FlutterFragmentActivity
+class MainActivity: AudioServiceFragmentActivity() {
+}
