@@ -1,9 +1,16 @@
-import 'package:back_in_town_flutter/full_player.dart.dart';
 import 'package:flutter/material.dart';
-import 'package:marquee/marquee.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // Importa le icone
-import 'radio_service.dart';
-import 'whatsapp_service.dart'; // Importa il servizio WhatsApp
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../services/radio_service.dart';
+import '../services/whatsapp_service.dart';
+import '../models/radio_metadata.dart';
+import '../widgets/scrolling_text.dart';
+import 'full_player_screen.dart';
+
+/*
+ * widget 'persistent bottom bar'.
+ * deve essere leggero. mostra info essenziali e controlli rapidi.
+ * funge da trigger per aprire il player a schermo intero.
+ */
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -13,6 +20,7 @@ class MiniPlayer extends StatelessWidget {
     final radioService = RadioService();
 
     return GestureDetector(
+      // tap sulla barra apre il player full screen
       onTap: () {
         showModalBottomSheet(
           context: context,
@@ -30,14 +38,14 @@ class MiniPlayer extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // 1. INFO CANZONE E IMMAGINE
+            // --- sezione info (sx) ---
             Expanded(
               child: ValueListenableBuilder<RadioMetadata>(
                 valueListenable: radioService.metadataNotifier,
                 builder: (context, metadata, _) {
                   return Row(
                     children: [
-                      // Immagine Album
+                      // artwork
                       Container(
                         width: 50,
                         height: 50,
@@ -45,13 +53,6 @@ class MiniPlayer extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.grey[900],
                           borderRadius: BorderRadius.circular(6),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.3),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(6),
@@ -59,12 +60,10 @@ class MiniPlayer extends StatelessWidget {
                               ? Image.network(
                                   metadata.artUrl,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return const Icon(
-                                      Icons.music_note,
-                                      color: Colors.white24,
-                                    );
-                                  },
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.music_note,
+                                    color: Colors.white24,
+                                  ),
                                 )
                               : const Icon(
                                   Icons.music_note,
@@ -72,8 +71,7 @@ class MiniPlayer extends StatelessWidget {
                                 ),
                         ),
                       ),
-
-                      // Testi
+                      // testi
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -81,10 +79,8 @@ class MiniPlayer extends StatelessWidget {
                           children: [
                             SizedBox(
                               height: 25,
-                              child: AutoScrollingText(
-                                text: metadata.title.isNotEmpty
-                                    ? metadata.title
-                                    : "Back In Town",
+                              child: ScrollingText(
+                                text: metadata.title,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -94,9 +90,7 @@ class MiniPlayer extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              metadata.artist.isNotEmpty
-                                  ? metadata.artist
-                                  : "Radio Fossano",
+                              metadata.artist,
                               style: const TextStyle(
                                 color: Colors.white70,
                                 fontSize: 13,
@@ -113,25 +107,22 @@ class MiniPlayer extends StatelessWidget {
               ),
             ),
 
-            // 2. PULSANTI (WhatsApp + Play/Pause)
+            // --- sezione controlli (dx) ---
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // --- BOTTONE WHATSAPP ---
+                // whatsapp
                 IconButton(
-                  // Icona ufficiale WhatsApp
                   icon: const FaIcon(
                     FontAwesomeIcons.whatsapp,
-                    color: Color(0xFF25D366), // Verde ufficiale WhatsApp
+                    color: Color(0xFF25D366),
                     size: 32,
                   ),
-                  onPressed: () {
-                    WhatsAppService.openWhatsApp(context);
-                  },
+                  onPressed: () => WhatsAppService.openWhatsApp(context),
                 ),
+                const SizedBox(width: 8),
 
-                const SizedBox(width: 8), // Spazio tra i bottoni
-                // Bottone Play/Pause
+                // play/pause con spinner loading
                 ValueListenableBuilder<bool>(
                   valueListenable: radioService.isLoadingNotifier,
                   builder: (context, isLoading, _) {
@@ -148,7 +139,6 @@ class MiniPlayer extends StatelessWidget {
                         ),
                       );
                     }
-
                     return ValueListenableBuilder<bool>(
                       valueListenable: radioService.isPlayingNotifier,
                       builder: (context, isPlaying, _) {
@@ -160,13 +150,9 @@ class MiniPlayer extends StatelessWidget {
                             size: 40,
                             color: Colors.white,
                           ),
-                          onPressed: () {
-                            if (isPlaying) {
-                              radioService.pause();
-                            } else {
-                              radioService.play();
-                            }
-                          },
+                          onPressed: () => isPlaying
+                              ? radioService.pause()
+                              : radioService.play(),
                         );
                       },
                     );
@@ -177,52 +163,6 @@ class MiniPlayer extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-// Widget Scroll (invariato)
-class AutoScrollingText extends StatelessWidget {
-  final String text;
-  final TextStyle style;
-
-  const AutoScrollingText({super.key, required this.text, required this.style});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final textSpan = TextSpan(text: text, style: style);
-        final textPainter = TextPainter(
-          text: textSpan,
-          maxLines: 1,
-          textDirection: TextDirection.ltr,
-        )..layout();
-
-        if (textPainter.width > constraints.maxWidth) {
-          return Marquee(
-            text: text,
-            style: style,
-            scrollAxis: Axis.horizontal,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            blankSpace: 30.0,
-            velocity: 30.0,
-            pauseAfterRound: const Duration(seconds: 3),
-            startPadding: 0.0,
-            accelerationDuration: const Duration(seconds: 1),
-            accelerationCurve: Curves.linear,
-            decelerationDuration: const Duration(milliseconds: 500),
-            decelerationCurve: Curves.easeOut,
-          );
-        } else {
-          return Text(
-            text,
-            style: style,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          );
-        }
-      },
     );
   }
 }

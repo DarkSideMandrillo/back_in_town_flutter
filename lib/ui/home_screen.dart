@@ -1,9 +1,14 @@
-import 'package:back_in_town_flutter/mini_player.dart.dart';
-import 'package:flutter/foundation.dart'; // Serve per kDebugMode
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-// Import necessario per le funzioni specifiche Android
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'mini_player.dart';
+
+/*
+ * container principale.
+ * impila la webview (il sito) e il mini player (l'audio nativo).
+ * responsabile dell'injection js per nascondere il player html del sito web.
+ */
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -23,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _initWebView() {
-    // 1. Creiamo i parametri di inizializzazione specifici per la piattaforma
+    // hack per gestire piattaforma android vs ios
     late final PlatformWebViewControllerCreationParams params;
     if (WebViewPlatform.instance is AndroidWebViewPlatform) {
       params = AndroidWebViewControllerCreationParams();
@@ -31,54 +36,38 @@ class _HomeScreenState extends State<HomeScreen> {
       params = const PlatformWebViewControllerCreationParams();
     }
 
-    // 2. Creiamo il controller con i parametri
     final WebViewController controller =
         WebViewController.fromPlatformCreationParams(params);
 
     controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF000000))
-      // --- FIX ORB ERROR: Impostiamo un User Agent standard da mobile ---
+      // user agent fake obbligatorio.
+      // senza di questo, alcuni server audio bloccano la richiesta (orb error).
       ..setUserAgent(
         "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36",
       )
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (String url) {
-            setState(() {
-              _isLoading = true;
-            });
-          },
-          onPageFinished: (String url) {
-            setState(() {
-              _isLoading = false;
-            });
-            // Inietta il CSS/JS per nascondere il player del sito se necessario
-            controller.runJavaScript('''
-              var element = document.querySelector('.custom-radio-player');
-              if (element) { element.style.display = 'none'; }
-            ''');
-          },
-          onWebResourceError: (WebResourceError error) {
-            debugPrint(
-              "Errore WebView: ${error.description}, Code: ${error.errorCode}",
+          onPageStarted: (_) => setState(() => _isLoading = true),
+          onPageFinished: (_) {
+            setState(() => _isLoading = false);
+            // injection js chirurgica per nascondere il player html del sito.
+            // noi usiamo il player nativo (flutter), due player sarebbero ridicoli.
+            controller.runJavaScript(
+              "var element = document.querySelector('.custom-radio-player'); if (element) { element.style.display = 'none'; }",
             );
           },
+          onWebResourceError: (err) =>
+              debugPrint("webview error: ${err.description}"),
         ),
       )
       ..loadRequest(Uri.parse('https://test.backintown.it/'));
 
-    // 3. Configurazioni specifiche per Android (Debug e Media)
+    // config extra android: debug e audio policy
     if (controller.platform is AndroidWebViewController) {
-      AndroidWebViewController androidController =
-          controller.platform as AndroidWebViewController;
-
-      // Abilita il debug della WebView se siamo in modalità debug (utile per ispezionare da Chrome su PC)
-      if (kDebugMode) {
-        AndroidWebViewController.enableDebugging(true);
-      }
-
-      // Permette la riproduzione media senza gesture (opzionale, ma aiuta con l'audio)
+      final androidController = controller.platform as AndroidWebViewController;
+      if (kDebugMode) AndroidWebViewController.enableDebugging(true);
       androidController.setMediaPlaybackRequiresUserGesture(false);
     }
 
@@ -92,6 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // webview
             Expanded(
               child: Stack(
                 children: [
@@ -103,6 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+            // player sempre visibile
             const MiniPlayer(),
           ],
         ),

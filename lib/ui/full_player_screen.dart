@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:marquee/marquee.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart'; // Per icona WhatsApp
-import 'radio_service.dart';
-import 'whatsapp_service.dart'; // Per la logica WhatsApp
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import '../services/radio_service.dart';
+import '../services/whatsapp_service.dart';
+import '../models/radio_metadata.dart';
+import '../widgets/scrolling_text.dart';
+
+/*
+ * vista modale 'now playing'.
+ * focus totale su artwork e leggibilità.
+ * simula il comportamento standard dei player ios/android (swipe down per chiudere).
+ */
 
 class FullPlayerScreen extends StatelessWidget {
   const FullPlayerScreen({super.key});
@@ -12,18 +19,16 @@ class FullPlayerScreen extends StatelessWidget {
     final radioService = RadioService();
 
     return Container(
-      // Occupa il 95% dell'altezza dello schermo
+      // copre 95% altezza, simula foglio modale ios
       height: MediaQuery.of(context).size.height * 0.95,
       decoration: const BoxDecoration(
-        color: Color(0xFF181818), // Sfondo scuro
+        color: Color(0xFF181818),
         borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
       ),
       padding: const EdgeInsets.fromLTRB(25, 10, 25, 40),
       child: Column(
         children: [
-          // -----------------------------------------------------
-          // 1. MANIGLIA E TASTO CHIUDI
-          // -----------------------------------------------------
+          // maniglia drag & drop (visiva)
           Container(
             width: 40,
             height: 5,
@@ -33,6 +38,7 @@ class FullPlayerScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
           ),
+          // tasto chiudi
           Align(
             alignment: Alignment.centerLeft,
             child: IconButton(
@@ -45,16 +51,15 @@ class FullPlayerScreen extends StatelessWidget {
             ),
           ),
 
-          const Spacer(), // Spinge il contenuto al centro
-          // -----------------------------------------------------
-          // 2. COPERTINA ALBUM (GRANDE) E DATI
-          // -----------------------------------------------------
+          const Spacer(),
+
+          // --- artwork & meta ---
           ValueListenableBuilder<RadioMetadata>(
             valueListenable: radioService.metadataNotifier,
             builder: (context, metadata, _) {
               return Column(
                 children: [
-                  // COPERTINA
+                  // copertina grande
                   Container(
                     width: 280,
                     height: 280,
@@ -74,16 +79,14 @@ class FullPlayerScreen extends StatelessWidget {
                           ? Image.network(
                               metadata.artUrl,
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  color: Colors.grey[900],
-                                  child: const Icon(
-                                    Icons.music_note,
-                                    size: 80,
-                                    color: Colors.white24,
-                                  ),
-                                );
-                              },
+                              errorBuilder: (_, __, ___) => Container(
+                                color: Colors.grey[900],
+                                child: const Icon(
+                                  Icons.music_note,
+                                  size: 80,
+                                  color: Colors.white24,
+                                ),
+                              ),
                             )
                           : Container(
                               color: Colors.grey[900],
@@ -98,13 +101,13 @@ class FullPlayerScreen extends StatelessWidget {
 
                   const SizedBox(height: 40),
 
-                  // TITOLO (Scorrevoli)
+                  // titolo
                   SizedBox(
                     height: 35,
-                    child: AutoScrollingTextFull(
-                      text: metadata.title.isNotEmpty
-                          ? metadata.title
-                          : "Back In Town",
+                    child: ScrollingText(
+                      text: metadata.title,
+                      centerIfStationary:
+                          true, // qui vogliamo centrare se il testo è corto
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -115,11 +118,9 @@ class FullPlayerScreen extends StatelessWidget {
 
                   const SizedBox(height: 8),
 
-                  // ARTISTA
+                  // artista
                   Text(
-                    metadata.artist.isNotEmpty
-                        ? metadata.artist
-                        : "Radio Fossano",
+                    metadata.artist,
                     textAlign: TextAlign.center,
                     style: const TextStyle(color: Colors.white70, fontSize: 18),
                     maxLines: 1,
@@ -132,32 +133,28 @@ class FullPlayerScreen extends StatelessWidget {
 
           const Spacer(),
 
-          // -----------------------------------------------------
-          // 3. CONTROLLI (WhatsApp e Play/Pause)
-          // -----------------------------------------------------
+          // --- controlli principali ---
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // BOTTONE WHATSAPP
+              // whatsapp big
               IconButton(
                 iconSize: 40,
                 icon: const FaIcon(
                   FontAwesomeIcons.whatsapp,
                   color: Color(0xFF25D366),
                 ),
-                onPressed: () {
-                  WhatsAppService.openWhatsApp(context);
-                },
+                onPressed: () => WhatsAppService.openWhatsApp(context),
               ),
 
               const SizedBox(width: 40),
 
-              // BOTTONE PLAY/PAUSE (Con Loading)
+              // play big con sfondo bianco
               Container(
                 width: 80,
                 height: 80,
                 decoration: const BoxDecoration(
-                  color: Colors.white, // Cerchio bianco
+                  color: Colors.white,
                   shape: BoxShape.circle,
                 ),
                 child: ValueListenableBuilder<bool>(
@@ -172,7 +169,6 @@ class FullPlayerScreen extends StatelessWidget {
                         ),
                       );
                     }
-
                     return ValueListenableBuilder<bool>(
                       valueListenable: radioService.isPlayingNotifier,
                       builder: (context, isPlaying, _) {
@@ -182,15 +178,11 @@ class FullPlayerScreen extends StatelessWidget {
                                 ? Icons.pause_rounded
                                 : Icons.play_arrow_rounded,
                             size: 50,
-                            color: Colors.black, // Icona nera su cerchio bianco
+                            color: Colors.black,
                           ),
-                          onPressed: () {
-                            if (isPlaying) {
-                              radioService.pause();
-                            } else {
-                              radioService.play();
-                            }
-                          },
+                          onPressed: () => isPlaying
+                              ? radioService.pause()
+                              : radioService.play(),
                         );
                       },
                     );
@@ -199,69 +191,13 @@ class FullPlayerScreen extends StatelessWidget {
               ),
 
               const SizedBox(width: 40),
-
-              // (Opzionale: Un terzo bottone fantasma per bilanciare il layout se serve,
-              // altrimenti puoi lasciarlo vuoto o mettere un pulsante share)
+              // placeholder per simmetria, se serve in futuro
               const SizedBox(width: 40),
             ],
           ),
-
           const SizedBox(height: 20),
         ],
       ),
-    );
-  }
-}
-
-// --- HELPER PER SCROLL (Versione centrata per il Full Player) ---
-class AutoScrollingTextFull extends StatelessWidget {
-  final String text;
-  final TextStyle style;
-
-  const AutoScrollingTextFull({
-    super.key,
-    required this.text,
-    required this.style,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final textSpan = TextSpan(text: text, style: style);
-        final textPainter = TextPainter(
-          text: textSpan,
-          maxLines: 1,
-          textDirection: TextDirection.ltr,
-        )..layout();
-
-        if (textPainter.width > constraints.maxWidth) {
-          return Marquee(
-            text: text,
-            style: style,
-            scrollAxis: Axis.horizontal,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            blankSpace: 50.0,
-            velocity: 30.0,
-            pauseAfterRound: const Duration(seconds: 3),
-            startPadding: 0.0,
-            accelerationDuration: const Duration(seconds: 1),
-            accelerationCurve: Curves.linear,
-            decelerationDuration: const Duration(milliseconds: 500),
-            decelerationCurve: Curves.easeOut,
-          );
-        } else {
-          // Nel Full Player preferiamo il titolo CENTRATO se non scorre
-          return Center(
-            child: Text(
-              text,
-              style: style,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          );
-        }
-      },
     );
   }
 }
