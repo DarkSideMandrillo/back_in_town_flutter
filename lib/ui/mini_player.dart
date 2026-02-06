@@ -56,7 +56,9 @@ class MiniPlayer extends StatelessWidget {
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(6),
-                          child: metadata.artUrl.isNotEmpty
+                          child:
+                              (metadata.artUrl.isNotEmpty &&
+                                  metadata.artUrl.startsWith('http'))
                               ? Image.network(
                                   metadata.artUrl,
                                   fit: BoxFit.cover,

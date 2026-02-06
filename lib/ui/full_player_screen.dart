@@ -74,28 +74,19 @@ class FullPlayerScreen extends StatelessWidget {
                       ],
                     ),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: metadata.artUrl.isNotEmpty
+                      borderRadius: BorderRadius.circular(6),
+                      child:
+                          (metadata.artUrl.isNotEmpty &&
+                              metadata.artUrl.startsWith('http'))
                           ? Image.network(
                               metadata.artUrl,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(
-                                color: Colors.grey[900],
-                                child: const Icon(
-                                  Icons.music_note,
-                                  size: 80,
-                                  color: Colors.white24,
-                                ),
-                              ),
-                            )
-                          : Container(
-                              color: Colors.grey[900],
-                              child: const Icon(
+                              errorBuilder: (_, __, ___) => const Icon(
                                 Icons.music_note,
-                                size: 80,
                                 color: Colors.white24,
                               ),
-                            ),
+                            )
+                          : const Icon(Icons.music_note, color: Colors.white24),
                     ),
                   ),
 
